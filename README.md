@@ -1,6 +1,16 @@
-# gacc – GitHub Account CLI
+<p align="center">
+  <img src="docs/logo.jpg" alt="gacc Ice Bear logo" width="160" />
+</p>
 
-**Talk to GitHub in plain English — and never ship under the wrong account.**
+<h1 align="center">gacc</h1>
+
+<p align="center">
+  <strong>Talk to GitHub in plain English — and never ship under the wrong account.</strong>
+</p>
+
+<p align="center">
+  <em>Stay cool. ❄️</em>
+</p>
 
 ```bash
 gacc "who am I"
@@ -11,16 +21,20 @@ gacc ship my-app --public
 gacc create my-app --public --explain
 ```
 
+When you run `gacc` with no arguments, Ice Bear greets you in the terminal.
+
 Built on the official [GitHub CLI (`gh`)](https://cli.github.com/).
 
 ## What makes gacc different
 
 | Feature | What it does |
 |--------|----------------|
+| **Ice Bear startup** | Distinct terminal banner every time you open `gacc` |
 | **Plain English** | `gacc "create a public repo called hello"` |
 | **Account guard** | Warns before create/ship if active account ≠ remote / expected |
-| **`gacc check`** | Shows active account vs git identity vs remote owner |
-| **`gacc ship`** | One shot: init → commit → create → push |
+| **`gacc check`** | Active account vs git identity vs remote owner |
+| **`gacc ship`** | Init → commit → create → push |
+| **Activity summary** | After every command, a clear “What happened” table |
 | **`--explain` / `--dry-run`** | Print commands without running them |
 
 ## Install
@@ -42,47 +56,19 @@ gh auth login     # for each account
 
 | Command | Description |
 |---------|-------------|
+| `gacc` | Ice Bear banner + help |
 | `gacc status` | Active GitHub account |
-| `gacc check` | Account guard report for this folder |
+| `gacc check` | Account guard report |
 | `gacc list` | All authenticated accounts |
 | `gacc use <user>` | Switch account |
 | `gacc login` | Authenticate a new account |
-| `gacc create <name>` | Create repo + push (with guard) |
-| `gacc create <name> --public --explain` | Dry-run create |
-| `gacc ship [name]` | Init → commit → create → push |
-| `gacc ship my-app --public -a work` | Ship under a specific account |
+| `gacc create <name>` | Create repo + push (with guard + summary) |
+| `gacc ship [name]` | One-shot ship |
 | `gacc version` | Version |
 | `gacc ask "..."` | Plain English |
-
-### Create options
-
-```bash
-gacc create my-app --public
-gacc create my-app -d "My app" -a myusername
-gacc create my-app --no-push
-gacc create my-app --force          # skip guard prompt
-```
-
-### Ship options
-
-```bash
-gacc ship                    # uses folder name
-gacc ship my-app --public
-gacc ship my-app -m "First commit" -a work
-gacc ship my-app --explain
-```
-
-## Plain English examples
-
-| You say | gacc does |
-|--------|-----------|
-| `gacc "who am I"` | status |
-| `gacc "check account"` | check |
-| `gacc "list accounts"` | list |
-| `gacc "switch to octocat"` | use |
-| `gacc "create a public repo called hello"` | create |
-| `gacc "ship this as public repo demo"` | ship |
 
 ## License
 
 MIT
+
+Logo inspired by Ice Bear (We Bare Bears) — used as project mascot branding.
