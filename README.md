@@ -1,84 +1,89 @@
 # gacc – GitHub Account CLI
 
-**Make multiple GitHub accounts and creating repos from the terminal painless.**
+**Switch accounts. Create repos. Push code. In plain English if you want.**
 
-`gacc` helps you:
+```bash
+gacc "who am I"
+gacc "list my accounts"
+gacc "switch to myusername"
+gacc "create a public repo called my-app"
+```
 
-- Switch between multiple GitHub accounts easily
-- Create a new GitHub repository directly from the terminal
-- Push your local code in one command
+Or classic commands:
 
-Built on top of the official [GitHub CLI (`gh`)](https://cli.github.com/).
+```bash
+gacc status
+gacc list
+gacc use myusername
+gacc create my-app --public
+```
+
+Built on the official [GitHub CLI (`gh`)](https://cli.github.com/).
+
+## Install (global)
+
+```bash
+# From the repo
+git clone https://github.com/vinyaspoojary318-cloud/gacc.git
+cd gacc
+pip install -e .
+
+# Later, when published on PyPI:
+# pip install gacc
+```
+
+Requires **Python 3.9+** and **[GitHub CLI](https://cli.github.com/)**:
+
+```bash
+brew install gh          # macOS
+gh auth login            # log in with each account you use
+```
+
+> **Why not npm?** `gacc` is a Python tool. Global install is via **pip** (PyPI), which works on every OS the same way `npm install -g` does for Node tools.
+
+## Plain English
+
+| You say | gacc does |
+|--------|-----------|
+| `gacc "who am I"` | Show active account |
+| `gacc "list accounts"` | List all accounts |
+| `gacc "switch to octocat"` | Switch account |
+| `gacc "login"` | Add / authenticate account |
+| `gacc "create a public repo called hello"` | Create + push public repo |
+| `gacc "create private project named secret"` | Create private repo |
+
+Same thing with the `ask` subcommand:
+
+```bash
+gacc ask "create a public repo called hello"
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `gacc status` | Active GitHub account |
+| `gacc list` | All authenticated accounts |
+| `gacc use <username>` | Switch account |
+| `gacc login` | Authenticate a new account |
+| `gacc create <name>` | Create repo + push (private by default) |
+| `gacc create <name> --public` | Public repo |
+| `gacc create <name> -d "desc" -a user` | Description + specific account |
+| `gacc version` | Version |
+| `gacc ask "..."` | Plain-English request |
 
 ## Why gacc?
 
-If you have more than one GitHub account (personal + work, or multiple personal accounts), the usual flow is painful:
+Without it: browser → create repo → hope it’s the right account → copy remote → terminal → push.
 
-1. Go to GitHub website
-2. Create the repository
-3. Come back to terminal
-4. Add remote
-5. Push
-6. Hope you used the correct account
-
-With `gacc` it becomes:
+With it:
 
 ```bash
-gacc create my-new-project
+gacc use work
+gacc create my-project
+# or
+gacc "create a repo called my-project"
 ```
-
-## Requirements
-
-- Python 3.9+
-- GitHub CLI (`gh`) installed and authenticated
-
-```bash
-# Install gh (example)
-brew install gh          # macOS
-# or see https://cli.github.com/
-
-# Login with your accounts
-gh auth login
-```
-
-## Installation
-
-```bash
-pip install -e .          # from source
-# or later
-pip install gacc
-```
-
-## Usage
-
-```bash
-# Check current account
-gacc status
-
-# List all accounts
-gacc list
-
-# Switch account
-gacc use your-username
-
-# Create repo + push current folder (private by default)
-gacc create my-awesome-project
-
-# Create public repo
-gacc create my-awesome-project --public
-
-# Create with description + specific account
-gacc create my-tool --account personal -d "A cool CLI tool"
-
-# Add a new GitHub account
-gacc login
-```
-
-## How it works
-
-- Uses `gh auth status` and `gh auth switch` for account management
-- Uses `gh repo create --source=. --remote=origin --push` for creating + pushing
-- Offers to run `git init` if you’re not in a git repository
 
 ## License
 
