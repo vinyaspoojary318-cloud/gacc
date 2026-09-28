@@ -17,6 +17,7 @@ from rich.text import Text
 
 from gacc.helpers import (
     account_guard,
+    clear_activity,
     console,
     current_user,
     ensure_gh,
@@ -25,11 +26,13 @@ from gacc.helpers import (
     git_identity,
     info,
     is_explain,
+    log_step,
     muted,
     ok,
     remote_owner,
     run,
     set_explain,
+    show_summary,
     switch_user,
     would,
 )
@@ -137,6 +140,7 @@ def main(
 ) -> None:
     """gacc – talk to GitHub in plain English; never ship under the wrong account."""
     set_explain(explain)
+    clear_activity()
 
     if ctx.invoked_subcommand is not None:
         return
@@ -159,9 +163,11 @@ def main(
 @app.command()
 def status() -> None:
     """Show the currently active GitHub account."""
+    clear_activity()
     ensure_gh()
     user = current_user()
     if user:
+        log_step("Checked active account", detail=user, meta={"account": user})
         console.print(
             Panel(
                 f"[success]Active account[/]\n\n[accent]{user}[/]",
@@ -169,9 +175,12 @@ def status() -> None:
                 padding=(0, 2),
             )
         )
+        show_summary("What happened")
     else:
+        log_step("Checked active account", detail="none found", ok=False)
         fail("No authenticated GitHub account found.")
         muted("Run: gacc login   or   gh auth login")
+        show_summary("What happened")
         raise typer.Exit(1)
 
 
@@ -189,15 +198,23 @@ def check(
     ),
 ) -> None:
     """Check whether the active account matches this repo (account guard)."""
+    clear_activity()
     ensure_gh()
     active = current_user()
     if not active:
+        log_step("Checked active account", detail="none found", ok=False)
         fail("No authenticated GitHub account.")
         muted("Run: gacc login")
+        show_summary("What happened")
         raise typer.Exit(1)
 
     git_name, git_email = git_identity(path)
     owner = remote_owner(path)
+
+    log_step("Read active gh account", detail=active, meta={"account": active})
+    log_step("Read git user.name", detail=git_name or "(not set)")
+    log_step("Read git user.email", detail=git_email or "(not set)")
+    log_step("Read remote owner", detail=owner or "(no origin)")
 
     table = Table(show_header=False, border_style="dim", box=None, padding=(0, 2))
     table.add_column("Key", style="muted")
@@ -215,6 +232,13 @@ def check(
             f"Remote owner [accent]{owner}[/] ≠ active account [accent]{active}[/]. "
             f"Switch with: [cmd]gacc use {owner}[/]"
         )
+        log_step(
+            "Account match check",
+            detail=f"mismatch: active={active}, remote={owner}",
+            ok=False,
+        )
+    else:
+        log_step("Account match check", detail="OK" if owner else "no remote to compare")
     if not owner:
         notes.append("[muted]No origin remote — nothing to mismatch yet.[/]")
 
@@ -223,17 +247,27 @@ def check(
     console.print(Panel(table, title=title, border_style=border))
     for n in notes:
         console.print(f"  {n}")
+    show_summary("What happened")
 
 
 @app.command("list")
 def list_accounts() -> None:
     """List all authenticated GitHub accounts."""
+    clear_activity()
     ensure_gh()
     accounts = gh_auth_status()
     if not accounts:
+        log_step("Listed accounts", detail="none found", ok=False)
         fail("No authenticated accounts found.")
         muted("Run: gacc login   or   gh auth login")
+        show_summary("What happened")
         raise typer.Exit(1)
+
+    names = [a.get("user", "?") for a in accounts]
+    log_step(
+        "Listed authenticated accounts",
+        detail=f"{len(accounts)} account(s): {', '.join(names)}",
+    )
 
     table = Table(
         title="GitHub Accounts",
@@ -251,6 +285,7 @@ def list_accounts() -> None:
         table.add_row(acc.get("user", "?"), acc.get("host", "github.com"), active)
 
     console.print(table)
+    show_summary("What happened")
 
 
 @app.command()
@@ -258,31 +293,58 @@ def use(
     username: str = typer.Argument(..., help="GitHub username to switch to"),
 ) -> None:
     """Switch the active GitHub account."""
+    clear_activity()
     ensure_gh()
+    before = current_user()
+    if before:
+        log_step("Previous active account", detail=before, meta={"account": before})
     info(f"Switching to [accent]{username}[/]...")
     if not switch_user(username):
+        log_step("Switch account", detail=f"failed → {username}", ok=False)
         fail(f"Failed to switch to '{username}'.")
         muted("Make sure the account is authenticated: gh auth login")
+        show_summary("What happened")
         raise typer.Exit(1)
+    log_step(
+        "Switched active account",
+        detail=f"{before or '?'} → {username}",
+        meta={"account": username},
+    )
     if is_explain():
         ok(f"Would switch to [accent]{username}[/]")
     else:
         ok(f"Switched to [accent]{username}[/]")
+    show_summary("What happened")
 
 
 @app.command()
 def login() -> None:
     """Add / authenticate a new GitHub account (wraps `gh auth login`)."""
+    clear_activity()
     ensure_gh()
     if is_explain():
         would("gh auth login")
+        log_step("Authenticate new account", detail="gh auth login (dry-run)")
+        show_summary("What would happen")
         return
     info("Starting GitHub authentication...")
+    log_step("Started GitHub login flow", detail="gh auth login")
     result = subprocess.run(["gh", "auth", "login"])
     if result.returncode != 0:
+        log_step("Authentication", detail="failed or cancelled", ok=False)
         fail("Authentication failed or was cancelled.")
+        show_summary("What happened")
         raise typer.Exit(result.returncode)
+    user = current_user()
+    log_step(
+        "Authentication complete",
+        detail=user or "ok",
+        meta={"account": user} if user else None,
+    )
     ok("Authentication complete.")
+    if user:
+        ok(f"Active account is now [accent]{user}[/]")
+    show_summary("What happened")
 
 
 @app.command()
@@ -315,14 +377,20 @@ def create(
     ),
 ) -> None:
     """Create a new GitHub repository (with account guard)."""
+    clear_activity()
     ensure_gh()
+    vis = "public" if public else "private"
+    log_step("Create repository requested", detail=f"{name} ({vis})")
 
     if account:
         info(f"Using account [accent]{account}[/]...")
         if not switch_user(account):
+            log_step("Switch account", detail=f"failed → {account}", ok=False)
             fail(f"Could not switch to account '{account}'.")
             muted("Authenticate it first: gacc login")
+            show_summary("What happened")
             raise typer.Exit(1)
+        log_step("Switched account", detail=account, meta={"account": account})
 
     current = account_guard(
         expected=account,
@@ -330,16 +398,22 @@ def create(
         action=f"create repo [accent]{name}[/]",
         force=force,
     )
+    if current:
+        log_step("Account guard passed", detail=current, meta={"account": current})
 
     if not (source / ".git").exists():
         console.print(f"[warn]No git repository in[/] [cmd]{source}[/]")
         if is_explain():
             would("git init")
+            log_step("git init", detail=str(source))
         elif typer.confirm("Run git init?", default=True):
             run(["git", "init"], check=True)
+            log_step("Initialized git repo", detail=str(source))
             ok("Initialized empty Git repository.")
         else:
+            log_step("git init", detail="aborted by user", ok=False)
             muted("Aborted.")
+            show_summary("What happened")
             raise typer.Exit(1)
 
     cmd = [
@@ -360,24 +434,42 @@ def create(
 
     if is_explain():
         would(cmd)
-        vis = "public" if public else "private"
+        log_step(
+            "Would create + push repo",
+            detail=f"{name} ({vis}) under {current or '?'}",
+            meta={
+                "account": current,
+                "url": f"https://github.com/{current}/{name}" if current else None,
+            },
+        )
         ok(
             f"Would create [accent]{name}[/] ([cmd]{vis}[/]) "
             f"under [accent]{current or '?'}[/]"
         )
+        show_summary("What would happen")
         return
 
     muted(f"$ {' '.join(cmd)}")
+    log_step("Running gh repo create", detail=" ".join(cmd))
     result = subprocess.run(cmd)
     if result.returncode != 0:
+        log_step("Create repository", detail="failed", ok=False)
         fail("Failed to create repository.")
+        show_summary("What happened")
         raise typer.Exit(result.returncode)
 
-    vis = "public" if public else "private"
+    url = f"https://github.com/{current}/{name}" if current else None
+    log_step(
+        "Repository created",
+        detail=f"{name} ({vis})" + (" + pushed" if push else ""),
+        meta={"account": current, "url": url},
+    )
+    if push:
+        log_step("Pushed to origin", detail="remote: origin")
     ok(f"Repository [accent]{name}[/] created ([cmd]{vis}[/])")
-    if current:
-        url = f"https://github.com/{current}/{name}"
+    if url:
         console.print(f"  [info]→[/] [link={url}]{url}[/link]")
+    show_summary("What happened on your account")
 
 
 @app.command()
@@ -409,16 +501,22 @@ def ship(
     ),
 ) -> None:
     """One-shot: init → commit (if needed) → create repo → push."""
+    clear_activity()
     ensure_gh()
 
     repo_name = name or source.name
+    vis = "public" if public else "private"
     info(f"Shipping [accent]{repo_name}[/]...")
+    log_step("Ship requested", detail=f"{repo_name} ({vis})")
 
     if account:
         info(f"Using account [accent]{account}[/]...")
         if not switch_user(account):
+            log_step("Switch account", detail=f"failed → {account}", ok=False)
             fail(f"Could not switch to '{account}'.")
+            show_summary("What happened")
             raise typer.Exit(1)
+        log_step("Switched account", detail=account, meta={"account": account})
 
     current = account_guard(
         expected=account,
@@ -426,12 +524,16 @@ def ship(
         action=f"ship [accent]{repo_name}[/]",
         force=force,
     )
+    if current:
+        log_step("Account guard passed", detail=current, meta={"account": current})
 
     if not (source / ".git").exists():
         if is_explain():
             would(["git", "-C", str(source), "init"])
+            log_step("git init", detail=str(source))
         else:
             run(["git", "init"], check=True)
+            log_step("Initialized git repo", detail=str(source))
             ok("git init")
 
     head = run(["git", "rev-parse", "HEAD"], check=False)
@@ -439,14 +541,19 @@ def ship(
         if is_explain():
             would(["git", "add", "-A"])
             would(["git", "commit", "-m", message])
+            log_step("Would commit", detail=message)
         else:
             run(["git", "add", "-A"], check=False)
             c = run(["git", "commit", "-m", message], check=False)
             if c.returncode == 0:
+                log_step("Created commit", detail=message)
                 ok(f"Committed: [cmd]{message}[/]")
             else:
                 run(["git", "commit", "--allow-empty", "-m", message], check=False)
+                log_step("Created empty commit", detail=message)
                 ok(f"Empty commit: [cmd]{message}[/]")
+    else:
+        log_step("Existing commits found", detail="skipping new commit")
 
     cmd = [
         "gh",
@@ -463,24 +570,41 @@ def ship(
 
     if is_explain():
         would(cmd)
-        vis = "public" if public else "private"
+        log_step(
+            "Would create + push repo",
+            detail=f"{repo_name} ({vis}) under {current or '?'}",
+            meta={
+                "account": current,
+                "url": f"https://github.com/{current}/{repo_name}" if current else None,
+            },
+        )
         ok(
             f"Would ship [accent]{repo_name}[/] ([cmd]{vis}[/]) "
             f"under [accent]{current or '?'}[/]"
         )
+        show_summary("What would happen")
         return
 
     muted(f"$ {' '.join(cmd)}")
+    log_step("Running gh repo create --push", detail=" ".join(cmd))
     result = subprocess.run(cmd)
     if result.returncode != 0:
+        log_step("Ship", detail="gh repo create failed", ok=False)
         fail("Ship failed (gh repo create).")
+        show_summary("What happened")
         raise typer.Exit(result.returncode)
 
-    vis = "public" if public else "private"
+    url = f"https://github.com/{current}/{repo_name}" if current else None
+    log_step(
+        "Repository created on GitHub",
+        detail=f"{repo_name} ({vis})",
+        meta={"account": current, "url": url},
+    )
+    log_step("Pushed to origin", detail="remote: origin")
     ok(f"Shipped [accent]{repo_name}[/] ([cmd]{vis}[/])")
-    if current:
-        url = f"https://github.com/{current}/{repo_name}"
+    if url:
         console.print(f"  [info]→[/] [link={url}]{url}[/link]")
+    show_summary("What happened on your account")
 
 
 @app.command()
