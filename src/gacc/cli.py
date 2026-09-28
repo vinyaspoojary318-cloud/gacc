@@ -36,6 +36,7 @@ from gacc.helpers import (
     switch_user,
     would,
 )
+from gacc.banner import render_banner
 from gacc.nl import parse_natural
 
 app = typer.Typer(
@@ -52,20 +53,8 @@ app = typer.Typer(
 
 
 def _show_banner() -> None:
-    title = Text()
-    title.append("gacc", style="bold cyan")
-    title.append("  ·  ", style="dim")
-    title.append("GitHub Account CLI", style="white")
-    console.print(
-        Panel(
-            "[muted]Plain English · Account guard · Ship in one command[/]\n"
-            '[cyan]gacc "create a public repo called my-app"[/]  ·  '
-            "[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]",
-            title=title,
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
+    """Ice Bear startup screen — shown when gacc runs with no args."""
+    render_banner(console)
 
 
 def _run_natural(text: str) -> None:
