@@ -1,1 +1,511 @@
-"""gacc – GitHub Account CLI.\n\nTalk to GitHub in plain English — and never ship under the wrong account.\nBuilt on the official GitHub CLI (gh).\n"""\n\nfrom __future__ import annotations\n\nimport subprocess\nfrom pathlib import Path\nfrom typing import Optional\n\nimport typer\nfrom rich.panel import Panel\nfrom rich.table import Table\nfrom rich.text import Text\n\nfrom gacc.helpers import (\n    account_guard,\n    console,\n    current_user,\n    ensure_gh,\n    fail,\n    gh_auth_status,\n    git_identity,\n    info,\n    is_explain,\n    muted,\n    ok,\n    remote_owner,\n    run,\n    set_explain,\n    switch_user,\n    would,\n)\nfrom gacc.nl import parse_natural\n\napp = typer.Typer(\n    name=\"gacc\",\n    help=(\n        \"Talk to GitHub in plain English — and never ship under the wrong account.\\n\\n\"\n        \"[dim]Examples:[/] [cyan]gacc \\\"create a public repo called my-app\\\"[/]  ·  \"\n        \"[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]\"\n    ),\n    add_completion=False,\n    no_args_is_help=False,\n    rich_markup_mode=\"rich\",\n)\n\n\ndef _show_banner() -> None:\n    title = Text()\n    title.append(\"gacc\", style=\"bold cyan\")\n    title.append(\"  ·  \", style=\"dim\")\n    title.append(\"GitHub Account CLI\", style=\"white\")\n    console.print(\n        Panel(\n            \"[muted]Plain English · Account guard · Ship in one command[/]\\n\"\n            '[cyan]gacc \"create a public repo called my-app\"[/]  ·  '\n            \"[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]\",\n            title=title,\n            border_style=\"cyan\",\n            padding=(0, 2),\n        )\n    )\n\n\ndef _run_natural(text: str) -> None:\n    parsed = parse_natural(text)\n    if not parsed:\n        console.print(\n            Panel(\n                f\"[warn]I didn't understand:[/] [cmd]{text}[/]\\n\\n\"\n                \"[muted]Try:[/]\\n\"\n                '  [cyan]gacc \"who am I\"[/]\\n'\n                '  [cyan]gacc \"check account\"[/]\\n'\n                '  [cyan]gacc \"list my accounts\"[/]\\n'\n                '  [cyan]gacc \"switch to myusername\"[/]\\n'\n                '  [cyan]gacc \"create a public repo called my-app\"[/]\\n'\n                '  [cyan]gacc \"ship this as public repo my-app\"[/]\\n'\n                '  [cyan]gacc \"login\"[/]',\n                title=\"[warn]Unknown request[/]\",\n                border_style=\"yellow\",\n            )\n        )\n        raise typer.Exit(1)\n\n    cmd, kwargs = parsed\n    info(f\"Understood: [accent]{cmd}[/] {kwargs if kwargs else ''}\")\n    if is_explain():\n        muted(\"(explain / dry-run mode — no changes will be made)\")\n\n    if cmd == \"status\":\n        status()\n    elif cmd == \"check\":\n        check()\n    elif cmd == \"list\":\n        list_accounts()\n    elif cmd == \"login\":\n        login()\n    elif cmd == \"use\":\n        use(kwargs[\"username\"])\n    elif cmd == \"create\":\n        name = kwargs.get(\"name\") or typer.prompt(\"Repository name\")\n        create(\n            name=name,\n            public=bool(kwargs.get(\"public\")),\n            description=kwargs.get(\"description\"),\n            account=kwargs.get(\"account\"),\n            force=False,\n        )\n    elif cmd == \"ship\":\n        ship(\n            name=kwargs.get(\"name\"),\n            public=bool(kwargs.get(\"public\")),\n            account=kwargs.get(\"account\"),\n            force=False,\n        )\n    elif cmd == \"help\":\n        _show_banner()\n        console.print(app.get_help())\n\n\n@app.callback(invoke_without_command=True)\ndef main(\n    ctx: typer.Context,\n    request: Optional[str] = typer.Argument(\n        None,\n        help='Plain English request, e.g. \"create a public repo called my-app\"',\n    ),\n    explain: bool = typer.Option(\n        False,\n        \"--explain\",\n        \"--dry-run\",\n        help=\"Show what would run without making changes\",\n    ),\n) -> None:\n    \"\"\"gacc – talk to GitHub in plain English; never ship under the wrong account.\"\"\"\n    set_explain(explain)\n\n    if ctx.invoked_subcommand is not None:\n        return\n    if request:\n        _run_natural(request)\n        return\n    _show_banner()\n    console.print(ctx.get_help())\n    console.print()\n    muted(\"Examples:\")\n    console.print('  [cyan]gacc \"who am I\"[/]')\n    console.print('  [cyan]gacc \"check account\"[/]')\n    console.print('  [cyan]gacc \"list accounts\"[/]')\n    console.print('  [cyan]gacc \"switch to octocat\"[/]')\n    console.print('  [cyan]gacc \"create a public repo called hello\"[/]')\n    console.print(\"  [cyan]gacc ship my-app --public[/]\")\n    console.print(\"  [cyan]gacc create my-app --public --explain[/]\")\n\n\n@app.command()\ndef status() -> None:\n    \"\"\"Show the currently active GitHub account.\"\"\"\n    ensure_gh()\n    user = current_user()\n    if user:\n        console.print(\n            Panel(\n                f\"[success]Active account[/]\\n\\n[accent]{user}[/]\",\n                border_style=\"green\",\n                padding=(0, 2),\n            )\n        )\n    else:\n        fail(\"No authenticated GitHub account found.\")\n        muted(\"Run: gacc login   or   gh auth login\")\n        raise typer.Exit(1)\n\n\n@app.command()\ndef check(\n    path: Path = typer.Option(\n        Path(\".\"),\n        \"--path\",\n        \"-p\",\n        help=\"Repo path to check against\",\n        exists=True,\n        file_okay=False,\n        dir_okay=True,\n        resolve_path=True,\n    ),\n) -> None:\n    \"\"\"Check whether the active account matches this repo (account guard).\"\"\"\n    ensure_gh()\n    active = current_user()\n    if not active:\n        fail(\"No authenticated GitHub account.\")\n        muted(\"Run: gacc login\")\n        raise typer.Exit(1)\n\n    git_name, git_email = git_identity(path)\n    owner = remote_owner(path)\n\n    table = Table(show_header=False, border_style=\"dim\", box=None, padding=(0, 2))\n    table.add_column(\"Key\", style=\"muted\")\n    table.add_column(\"Value\", style=\"accent\")\n    table.add_row(\"Active gh account\", active)\n    table.add_row(\"Git user.name\", git_name or \"—\")\n    table.add_row(\"Git user.email\", git_email or \"—\")\n    table.add_row(\"Remote owner\", owner or \"— (no origin)\")\n\n    ok_match = True\n    notes: list[str] = []\n    if owner and active.lower() != owner.lower():\n        ok_match = False\n        notes.append(\n            f\"Remote owner [accent]{owner}[/] ≠ active account [accent]{active}[/]. \"\n            f\"Switch with: [cmd]gacc use {owner}[/]\"\n        )\n    if not owner:\n        notes.append(\"[muted]No origin remote — nothing to mismatch yet.[/]\")\n\n    border = \"green\" if ok_match else \"yellow\"\n    title = \"[success]Looks good[/]\" if ok_match else \"[warn]Possible mismatch[/]\"\n    console.print(Panel(table, title=title, border_style=border))\n    for n in notes:\n        console.print(f\"  {n}\")\n\n\n@app.command(\"list\")\ndef list_accounts() -> None:\n    \"\"\"List all authenticated GitHub accounts.\"\"\"\n    ensure_gh()\n    accounts = gh_auth_status()\n    if not accounts:\n        fail(\"No authenticated accounts found.\")\n        muted(\"Run: gacc login   or   gh auth login\")\n        raise typer.Exit(1)\n\n    table = Table(\n        title=\"GitHub Accounts\",\n        show_header=True,\n        header_style=\"bold cyan\",\n        border_style=\"dim\",\n        title_style=\"bold\",\n    )\n    table.add_column(\"User\", style=\"cyan\", no_wrap=True)\n    table.add_column(\"Host\", style=\"muted\")\n    table.add_column(\"Active\", justify=\"center\")\n\n    for acc in accounts:\n        active = \"[success]✓[/]\" if acc.get(\"active\") else \"[muted]—[/]\"\n        table.add_row(acc.get(\"user\", \"?\"), acc.get(\"host\", \"github.com\"), active)\n\n    console.print(table)\n\n\n@app.command()\ndef use(\n    username: str = typer.Argument(..., help=\"GitHub username to switch to\"),\n) -> None:\n    \"\"\"Switch the active GitHub account.\"\"\"\n    ensure_gh()\n    info(f\"Switching to [accent]{username}[/]...\")\n    if not switch_user(username):\n        fail(f\"Failed to switch to '{username}'.\")\n        muted(\"Make sure the account is authenticated: gh auth login\")\n        raise typer.Exit(1)\n    if is_explain():\n        ok(f\"Would switch to [accent]{username}[/]\")\n    else:\n        ok(f\"Switched to [accent]{username}[/]\")\n\n\n@app.command()\ndef login() -> None:\n    \"\"\"Add / authenticate a new GitHub account (wraps `gh auth login`).\"\"\"\n    ensure_gh()\n    if is_explain():\n        would(\"gh auth login\")\n        return\n    info(\"Starting GitHub authentication...\")\n    result = subprocess.run([\"gh\", \"auth\", \"login\"])\n    if result.returncode != 0:\n        fail(\"Authentication failed or was cancelled.\")\n        raise typer.Exit(result.returncode)\n    ok(\"Authentication complete.\")\n\n\n@app.command()\ndef create(\n    name: str = typer.Argument(..., help=\"Name of the new repository\"),\n    public: bool = typer.Option(\n        False, \"--public\", help=\"Create a public repository (default is private)\"\n    ),\n    description: Optional[str] = typer.Option(\n        None, \"--description\", \"-d\", help=\"Repository description\"\n    ),\n    account: Optional[str] = typer.Option(\n        None, \"--account\", \"-a\", help=\"GitHub account (username) to use\"\n    ),\n    source: Path = typer.Option(\n        Path(\".\"),\n        \"--source\",\n        \"-s\",\n        help=\"Local path (default: current directory)\",\n        exists=True,\n        file_okay=False,\n        dir_okay=True,\n        resolve_path=True,\n    ),\n    push: bool = typer.Option(\n        True, \"--push/--no-push\", help=\"Push after create (default: yes)\"\n    ),\n    force: bool = typer.Option(\n        False, \"--force\", \"-f\", help=\"Skip account-guard confirmation\"\n    ),\n) -> None:\n    \"\"\"Create a new GitHub repository (with account guard).\"\"\"\n    ensure_gh()\n\n    if account:\n        info(f\"Using account [accent]{account}[/]...\")\n        if not switch_user(account):\n            fail(f\"Could not switch to account '{account}'.\")\n            muted(\"Authenticate it first: gacc login\")\n            raise typer.Exit(1)\n\n    current = account_guard(\n        expected=account,\n        path=source,\n        action=f\"create repo [accent]{name}[/]\",\n        force=force,\n    )\n\n    if not (source / \".git\").exists():\n        console.print(f\"[warn]No git repository in[/] [cmd]{source}[/]\")\n        if is_explain():\n            would(\"git init\")\n        elif typer.confirm(\"Run git init?\", default=True):\n            run([\"git\", \"init\"], check=True)\n            ok(\"Initialized empty Git repository.\")\n        else:\n            muted(\"Aborted.\")\n            raise typer.Exit(1)\n\n    cmd = [\n        \"gh\",\n        \"repo\",\n        \"create\",\n        name,\n        \"--source\",\n        str(source),\n        \"--remote\",\n        \"origin\",\n        \"--public\" if public else \"--private\",\n    ]\n    if description:\n        cmd.extend([\"--description\", description])\n    if push:\n        cmd.append(\"--push\")\n\n    if is_explain():\n        would(cmd)\n        vis = \"public\" if public else \"private\"\n        ok(\n            f\"Would create [accent]{name}[/] ([cmd]{vis}[/]) \"\n            f\"under [accent]{current or '?'}[/]\"\n        )\n        return\n\n    muted(f\"$ {' '.join(cmd)}\")\n    result = subprocess.run(cmd)\n    if result.returncode != 0:\n        fail(\"Failed to create repository.\")\n        raise typer.Exit(result.returncode)\n\n    vis = \"public\" if public else \"private\"\n    ok(f\"Repository [accent]{name}[/] created ([cmd]{vis}[/])\")\n    if current:\n        url = f\"https://github.com/{current}/{name}\"\n        console.print(f\"  [info]→[/] [link={url}]{url}[/link]\")\n\n\n@app.command()\ndef ship(\n    name: Optional[str] = typer.Argument(\n        None, help=\"Repository name (default: current folder name)\"\n    ),\n    public: bool = typer.Option(\n        False, \"--public\", help=\"Create a public repository (default is private)\"\n    ),\n    account: Optional[str] = typer.Option(\n        None, \"--account\", \"-a\", help=\"GitHub account to ship under\"\n    ),\n    message: str = typer.Option(\n        \"Initial commit\", \"--message\", \"-m\", help=\"Commit message if needed\"\n    ),\n    force: bool = typer.Option(\n        False, \"--force\", \"-f\", help=\"Skip account-guard confirmation\"\n    ),\n    source: Path = typer.Option(\n        Path(\".\"),\n        \"--source\",\n        \"-s\",\n        help=\"Project directory\",\n        exists=True,\n        file_okay=False,\n        dir_okay=True,\n        resolve_path=True,\n    ),\n) -> None:\n    \"\"\"One-shot: init → commit (if needed) → create repo → push.\"\"\"\n    ensure_gh()\n\n    repo_name = name or source.name\n    info(f\"Shipping [accent]{repo_name}[/]...\")\n\n    if account:\n        info(f\"Using account [accent]{account}[/]...\")\n        if not switch_user(account):\n            fail(f\"Could not switch to '{account}'.\")\n            raise typer.Exit(1)\n\n    current = account_guard(\n        expected=account,\n        path=source,\n        action=f\"ship [accent]{repo_name}[/]\",\n        force=force,\n    )\n\n    if not (source / \".git\").exists():\n        if is_explain():\n            would([\"git\", \"-C\", str(source), \"init\"])\n        else:\n            run([\"git\", \"init\"], check=True)\n            ok(\"git init\")\n\n    head = run([\"git\", \"rev-parse\", \"HEAD\"], check=False)\n    if head.returncode != 0:\n        if is_explain():\n            would([\"git\", \"add\", \"-A\"])\n            would([\"git\", \"commit\", \"-m\", message])\n        else:\n            run([\"git\", \"add\", \"-A\"], check=False)\n            c = run([\"git\", \"commit\", \"-m\", message], check=False)\n            if c.returncode == 0:\n                ok(f\"Committed: [cmd]{message}[/]\")\n            else:\n                run([\"git\", \"commit\", \"--allow-empty\", \"-m\", message], check=False)\n                ok(f\"Empty commit: [cmd]{message}[/]\")\n\n    cmd = [\n        \"gh\",\n        \"repo\",\n        \"create\",\n        repo_name,\n        \"--source\",\n        str(source),\n        \"--remote\",\n        \"origin\",\n        \"--public\" if public else \"--private\",\n        \"--push\",\n    ]\n\n    if is_explain():\n        would(cmd)\n        vis = \"public\" if public else \"private\"\n        ok(\n            f\"Would ship [accent]{repo_name}[/] ([cmd]{vis}[/]) \"\n            f\"under [accent]{current or '?'}[/]\"\n        )\n        return\n\n    muted(f\"$ {' '.join(cmd)}\")\n    result = subprocess.run(cmd)\n    if result.returncode != 0:\n        fail(\"Ship failed (gh repo create).\")\n        raise typer.Exit(result.returncode)\n\n    vis = \"public\" if public else \"private\"\n    ok(f\"Shipped [accent]{repo_name}[/] ([cmd]{vis}[/])\")\n    if current:\n        url = f\"https://github.com/{current}/{repo_name}\"\n        console.print(f\"  [info]→[/] [link={url}]{url}[/link]\")\n\n\n@app.command()\ndef version() -> None:\n    \"\"\"Show gacc version.\"\"\"\n    from gacc import __version__\n\n    console.print(\n        Panel(\n            f\"[accent]gacc[/] [cmd]{__version__}[/]\",\n            border_style=\"cyan\",\n            padding=(0, 2),\n        )\n    )\n\n\n@app.command(\"ask\")\ndef ask(\n    request: str = typer.Argument(\n        ..., help='Plain English, e.g. \"create a public repo called my-app\"'\n    ),\n) -> None:\n    \"\"\"Do something in plain English (same as: gacc \\\"your request\\\").\"\"\"\n    _run_natural(request)\n\n\nif __name__ == \"__main__\":\n    app()\n
+"""gacc – GitHub Account CLI.
+
+Talk to GitHub in plain English — and never ship under the wrong account.
+Built on the official GitHub CLI (gh).
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from gacc.helpers import (
+    account_guard,
+    console,
+    current_user,
+    ensure_gh,
+    fail,
+    gh_auth_status,
+    git_identity,
+    info,
+    is_explain,
+    muted,
+    ok,
+    remote_owner,
+    run,
+    set_explain,
+    switch_user,
+    would,
+)
+from gacc.nl import parse_natural
+
+app = typer.Typer(
+    name="gacc",
+    help=(
+        "Talk to GitHub in plain English — and never ship under the wrong account.\n\n"
+        "[dim]Examples:[/] [cyan]gacc \"create a public repo called my-app\"[/]  ·  "
+        "[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]"
+    ),
+    add_completion=False,
+    no_args_is_help=False,
+    rich_markup_mode="rich",
+)
+
+
+def _show_banner() -> None:
+    title = Text()
+    title.append("gacc", style="bold cyan")
+    title.append("  ·  ", style="dim")
+    title.append("GitHub Account CLI", style="white")
+    console.print(
+        Panel(
+            "[muted]Plain English · Account guard · Ship in one command[/]\n"
+            '[cyan]gacc "create a public repo called my-app"[/]  ·  '
+            "[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]",
+            title=title,
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+
+
+def _run_natural(text: str) -> None:
+    parsed = parse_natural(text)
+    if not parsed:
+        console.print(
+            Panel(
+                f"[warn]I didn't understand:[/] [cmd]{text}[/]\n\n"
+                "[muted]Try:[/]\n"
+                '  [cyan]gacc "who am I"[/]\n'
+                '  [cyan]gacc "check account"[/]\n'
+                '  [cyan]gacc "list my accounts"[/]\n'
+                '  [cyan]gacc "switch to myusername"[/]\n'
+                '  [cyan]gacc "create a public repo called my-app"[/]\n'
+                '  [cyan]gacc "ship this as public repo my-app"[/]\n'
+                '  [cyan]gacc "login"[/]',
+                title="[warn]Unknown request[/]",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(1)
+
+    cmd, kwargs = parsed
+    info(f"Understood: [accent]{cmd}[/] {kwargs if kwargs else ''}")
+    if is_explain():
+        muted("(explain / dry-run mode — no changes will be made)")
+
+    if cmd == "status":
+        status()
+    elif cmd == "check":
+        check()
+    elif cmd == "list":
+        list_accounts()
+    elif cmd == "login":
+        login()
+    elif cmd == "use":
+        use(kwargs["username"])
+    elif cmd == "create":
+        name = kwargs.get("name") or typer.prompt("Repository name")
+        create(
+            name=name,
+            public=bool(kwargs.get("public")),
+            description=kwargs.get("description"),
+            account=kwargs.get("account"),
+            force=False,
+        )
+    elif cmd == "ship":
+        ship(
+            name=kwargs.get("name"),
+            public=bool(kwargs.get("public")),
+            account=kwargs.get("account"),
+            force=False,
+        )
+    elif cmd == "help":
+        _show_banner()
+        console.print(app.get_help())
+
+
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
+    request: Optional[str] = typer.Argument(
+        None,
+        help='Plain English request, e.g. "create a public repo called my-app"',
+    ),
+    explain: bool = typer.Option(
+        False,
+        "--explain",
+        "--dry-run",
+        help="Show what would run without making changes",
+    ),
+) -> None:
+    """gacc – talk to GitHub in plain English; never ship under the wrong account."""
+    set_explain(explain)
+
+    if ctx.invoked_subcommand is not None:
+        return
+    if request:
+        _run_natural(request)
+        return
+    _show_banner()
+    console.print(ctx.get_help())
+    console.print()
+    muted("Examples:")
+    console.print('  [cyan]gacc "who am I"[/]')
+    console.print('  [cyan]gacc "check account"[/]')
+    console.print('  [cyan]gacc "list accounts"[/]')
+    console.print('  [cyan]gacc "switch to octocat"[/]')
+    console.print('  [cyan]gacc "create a public repo called hello"[/]')
+    console.print("  [cyan]gacc ship my-app --public[/]")
+    console.print("  [cyan]gacc create my-app --public --explain[/]")
+
+
+@app.command()
+def status() -> None:
+    """Show the currently active GitHub account."""
+    ensure_gh()
+    user = current_user()
+    if user:
+        console.print(
+            Panel(
+                f"[success]Active account[/]\n\n[accent]{user}[/]",
+                border_style="green",
+                padding=(0, 2),
+            )
+        )
+    else:
+        fail("No authenticated GitHub account found.")
+        muted("Run: gacc login   or   gh auth login")
+        raise typer.Exit(1)
+
+
+@app.command()
+def check(
+    path: Path = typer.Option(
+        Path("."),
+        "--path",
+        "-p",
+        help="Repo path to check against",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+) -> None:
+    """Check whether the active account matches this repo (account guard)."""
+    ensure_gh()
+    active = current_user()
+    if not active:
+        fail("No authenticated GitHub account.")
+        muted("Run: gacc login")
+        raise typer.Exit(1)
+
+    git_name, git_email = git_identity(path)
+    owner = remote_owner(path)
+
+    table = Table(show_header=False, border_style="dim", box=None, padding=(0, 2))
+    table.add_column("Key", style="muted")
+    table.add_column("Value", style="accent")
+    table.add_row("Active gh account", active)
+    table.add_row("Git user.name", git_name or "—")
+    table.add_row("Git user.email", git_email or "—")
+    table.add_row("Remote owner", owner or "— (no origin)")
+
+    ok_match = True
+    notes: list[str] = []
+    if owner and active.lower() != owner.lower():
+        ok_match = False
+        notes.append(
+            f"Remote owner [accent]{owner}[/] ≠ active account [accent]{active}[/]. "
+            f"Switch with: [cmd]gacc use {owner}[/]"
+        )
+    if not owner:
+        notes.append("[muted]No origin remote — nothing to mismatch yet.[/]")
+
+    border = "green" if ok_match else "yellow"
+    title = "[success]Looks good[/]" if ok_match else "[warn]Possible mismatch[/]"
+    console.print(Panel(table, title=title, border_style=border))
+    for n in notes:
+        console.print(f"  {n}")
+
+
+@app.command("list")
+def list_accounts() -> None:
+    """List all authenticated GitHub accounts."""
+    ensure_gh()
+    accounts = gh_auth_status()
+    if not accounts:
+        fail("No authenticated accounts found.")
+        muted("Run: gacc login   or   gh auth login")
+        raise typer.Exit(1)
+
+    table = Table(
+        title="GitHub Accounts",
+        show_header=True,
+        header_style="bold cyan",
+        border_style="dim",
+        title_style="bold",
+    )
+    table.add_column("User", style="cyan", no_wrap=True)
+    table.add_column("Host", style="muted")
+    table.add_column("Active", justify="center")
+
+    for acc in accounts:
+        active = "[success]✓[/]" if acc.get("active") else "[muted]—[/]"
+        table.add_row(acc.get("user", "?"), acc.get("host", "github.com"), active)
+
+    console.print(table)
+
+
+@app.command()
+def use(
+    username: str = typer.Argument(..., help="GitHub username to switch to"),
+) -> None:
+    """Switch the active GitHub account."""
+    ensure_gh()
+    info(f"Switching to [accent]{username}[/]...")
+    if not switch_user(username):
+        fail(f"Failed to switch to '{username}'.")
+        muted("Make sure the account is authenticated: gh auth login")
+        raise typer.Exit(1)
+    if is_explain():
+        ok(f"Would switch to [accent]{username}[/]")
+    else:
+        ok(f"Switched to [accent]{username}[/]")
+
+
+@app.command()
+def login() -> None:
+    """Add / authenticate a new GitHub account (wraps `gh auth login`)."""
+    ensure_gh()
+    if is_explain():
+        would("gh auth login")
+        return
+    info("Starting GitHub authentication...")
+    result = subprocess.run(["gh", "auth", "login"])
+    if result.returncode != 0:
+        fail("Authentication failed or was cancelled.")
+        raise typer.Exit(result.returncode)
+    ok("Authentication complete.")
+
+
+@app.command()
+def create(
+    name: str = typer.Argument(..., help="Name of the new repository"),
+    public: bool = typer.Option(
+        False, "--public", help="Create a public repository (default is private)"
+    ),
+    description: Optional[str] = typer.Option(
+        None, "--description", "-d", help="Repository description"
+    ),
+    account: Optional[str] = typer.Option(
+        None, "--account", "-a", help="GitHub account (username) to use"
+    ),
+    source: Path = typer.Option(
+        Path("."),
+        "--source",
+        "-s",
+        help="Local path (default: current directory)",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+    push: bool = typer.Option(
+        True, "--push/--no-push", help="Push after create (default: yes)"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip account-guard confirmation"
+    ),
+) -> None:
+    """Create a new GitHub repository (with account guard)."""
+    ensure_gh()
+
+    if account:
+        info(f"Using account [accent]{account}[/]...")
+        if not switch_user(account):
+            fail(f"Could not switch to account '{account}'.")
+            muted("Authenticate it first: gacc login")
+            raise typer.Exit(1)
+
+    current = account_guard(
+        expected=account,
+        path=source,
+        action=f"create repo [accent]{name}[/]",
+        force=force,
+    )
+
+    if not (source / ".git").exists():
+        console.print(f"[warn]No git repository in[/] [cmd]{source}[/]")
+        if is_explain():
+            would("git init")
+        elif typer.confirm("Run git init?", default=True):
+            run(["git", "init"], check=True)
+            ok("Initialized empty Git repository.")
+        else:
+            muted("Aborted.")
+            raise typer.Exit(1)
+
+    cmd = [
+        "gh",
+        "repo",
+        "create",
+        name,
+        "--source",
+        str(source),
+        "--remote",
+        "origin",
+        "--public" if public else "--private",
+    ]
+    if description:
+        cmd.extend(["--description", description])
+    if push:
+        cmd.append("--push")
+
+    if is_explain():
+        would(cmd)
+        vis = "public" if public else "private"
+        ok(
+            f"Would create [accent]{name}[/] ([cmd]{vis}[/]) "
+            f"under [accent]{current or '?'}[/]"
+        )
+        return
+
+    muted(f"$ {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        fail("Failed to create repository.")
+        raise typer.Exit(result.returncode)
+
+    vis = "public" if public else "private"
+    ok(f"Repository [accent]{name}[/] created ([cmd]{vis}[/])")
+    if current:
+        url = f"https://github.com/{current}/{name}"
+        console.print(f"  [info]→[/] [link={url}]{url}[/link]")
+
+
+@app.command()
+def ship(
+    name: Optional[str] = typer.Argument(
+        None, help="Repository name (default: current folder name)"
+    ),
+    public: bool = typer.Option(
+        False, "--public", help="Create a public repository (default is private)"
+    ),
+    account: Optional[str] = typer.Option(
+        None, "--account", "-a", help="GitHub account to ship under"
+    ),
+    message: str = typer.Option(
+        "Initial commit", "--message", "-m", help="Commit message if needed"
+    ),
+    force: bool = typer.Option(
+        False, "--force", "-f", help="Skip account-guard confirmation"
+    ),
+    source: Path = typer.Option(
+        Path("."),
+        "--source",
+        "-s",
+        help="Project directory",
+        exists=True,
+        file_okay=False,
+        dir_okay=True,
+        resolve_path=True,
+    ),
+) -> None:
+    """One-shot: init → commit (if needed) → create repo → push."""
+    ensure_gh()
+
+    repo_name = name or source.name
+    info(f"Shipping [accent]{repo_name}[/]...")
+
+    if account:
+        info(f"Using account [accent]{account}[/]...")
+        if not switch_user(account):
+            fail(f"Could not switch to '{account}'.")
+            raise typer.Exit(1)
+
+    current = account_guard(
+        expected=account,
+        path=source,
+        action=f"ship [accent]{repo_name}[/]",
+        force=force,
+    )
+
+    if not (source / ".git").exists():
+        if is_explain():
+            would(["git", "-C", str(source), "init"])
+        else:
+            run(["git", "init"], check=True)
+            ok("git init")
+
+    head = run(["git", "rev-parse", "HEAD"], check=False)
+    if head.returncode != 0:
+        if is_explain():
+            would(["git", "add", "-A"])
+            would(["git", "commit", "-m", message])
+        else:
+            run(["git", "add", "-A"], check=False)
+            c = run(["git", "commit", "-m", message], check=False)
+            if c.returncode == 0:
+                ok(f"Committed: [cmd]{message}[/]")
+            else:
+                run(["git", "commit", "--allow-empty", "-m", message], check=False)
+                ok(f"Empty commit: [cmd]{message}[/]")
+
+    cmd = [
+        "gh",
+        "repo",
+        "create",
+        repo_name,
+        "--source",
+        str(source),
+        "--remote",
+        "origin",
+        "--public" if public else "--private",
+        "--push",
+    ]
+
+    if is_explain():
+        would(cmd)
+        vis = "public" if public else "private"
+        ok(
+            f"Would ship [accent]{repo_name}[/] ([cmd]{vis}[/]) "
+            f"under [accent]{current or '?'}[/]"
+        )
+        return
+
+    muted(f"$ {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        fail("Ship failed (gh repo create).")
+        raise typer.Exit(result.returncode)
+
+    vis = "public" if public else "private"
+    ok(f"Shipped [accent]{repo_name}[/] ([cmd]{vis}[/])")
+    if current:
+        url = f"https://github.com/{current}/{repo_name}"
+        console.print(f"  [info]→[/] [link={url}]{url}[/link]")
+
+
+@app.command()
+def version() -> None:
+    """Show gacc version."""
+    from gacc import __version__
+
+    console.print(
+        Panel(
+            f"[accent]gacc[/] [cmd]{__version__}[/]",
+            border_style="cyan",
+            padding=(0, 2),
+        )
+    )
+
+
+@app.command("ask")
+def ask(
+    request: str = typer.Argument(
+        ..., help='Plain English, e.g. "create a public repo called my-app"'
+    ),
+) -> None:
+    """Do something in plain English (same as: gacc \"your request\")."""
+    _run_natural(request)
+
+
+if __name__ == "__main__":
+    app()
