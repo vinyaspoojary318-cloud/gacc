@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gacc"
-version = "0.3.1"
+version = "0.3.2"
 description = "CLI to manage multiple GitHub accounts and create + push repositories directly from the terminal"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -42,3 +42,6 @@ gacc = "gacc.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+gacc = ["assets/*"]
