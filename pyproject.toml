@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gacc"
+version = "0.1.0"
+description = "CLI to manage multiple GitHub accounts and create + push repositories directly from the terminal"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "vinyaspoojary318-cloud"}
+]
+keywords = ["github", "cli", "python", "typer", "multi-account", "git", "developer-tools", "productivity", "gh", "open-source"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/vinyaspoojary318-cloud/gacc"
+Repository = "https://github.com/vinyaspoojary318-cloud/gacc"
+Issues = "https://github.com/vinyaspoojary318-cloud/gacc/issues"
+
+[project.scripts]
+gacc = "gacc.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
