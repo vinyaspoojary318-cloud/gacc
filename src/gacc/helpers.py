@@ -27,6 +27,9 @@ THEME = Theme(
 console = Console(theme=THEME)
 EXPLAIN: bool = False
 
+# Steps performed during this command (for end-of-run summary)
+_ACTIVITY: list[dict] = []
+
 
 def set_explain(value: bool) -> None:
     global EXPLAIN
@@ -35,6 +38,86 @@ def set_explain(value: bool) -> None:
 
 def is_explain() -> bool:
     return EXPLAIN
+
+
+def clear_activity() -> None:
+    _ACTIVITY.clear()
+
+
+def log_step(
+    action: str,
+    *,
+    detail: str = "",
+    ok: bool = True,
+    meta: dict | None = None,
+) -> None:
+    """Record something that happened (or would happen) for the final summary."""
+    _ACTIVITY.append(
+        {
+            "action": action,
+            "detail": detail,
+            "ok": ok,
+            "meta": meta or {},
+        }
+    )
+
+
+def show_summary(title: str = "What happened") -> None:
+    """Print a clear summary of every step so the user knows what changed."""
+    if not _ACTIVITY:
+        return
+
+    from rich.table import Table
+
+    table = Table(
+        show_header=True,
+        header_style="bold cyan",
+        border_style="dim",
+        title_style="bold",
+        pad_edge=False,
+    )
+    table.add_column("#", style="muted", width=3, justify="right")
+    table.add_column("Status", width=6, justify="center")
+    table.add_column("Action", style="accent")
+    table.add_column("Details", style="muted")
+
+    for i, step in enumerate(_ACTIVITY, 1):
+        status = "[success]✓[/]" if step.get("ok", True) else "[error]✗[/]"
+        if is_explain():
+            status = "[warn]·[/]"
+        table.add_row(
+            str(i),
+            status,
+            step.get("action", ""),
+            step.get("detail", ""),
+        )
+
+    mode = " [muted](dry-run — nothing was changed)[/]" if is_explain() else ""
+    console.print()
+    console.print(
+        Panel(
+            table,
+            title=f"[bold]{title}[/]{mode}",
+            border_style="cyan" if not is_explain() else "yellow",
+            padding=(0, 1),
+        )
+    )
+
+    account = None
+    url = None
+    for step in _ACTIVITY:
+        meta = step.get("meta") or {}
+        if meta.get("account"):
+            account = meta["account"]
+        if meta.get("url"):
+            url = meta["url"]
+    if account or url:
+        lines = []
+        if account:
+            lines.append(f"[muted]Account:[/]  [accent]{account}[/]")
+        if url:
+            lines.append(f"[muted]Repo URL:[/] [link={url}]{url}[/link]")
+        console.print(Panel("\n".join(lines), border_style="dim", padding=(0, 1)))
 
 
 def run(
