@@ -1,61 +1,41 @@
 # gacc – GitHub Account CLI
 
-**Switch accounts. Create repos. Push code. In plain English if you want.**
+**Talk to GitHub in plain English — and never ship under the wrong account.**
 
 ```bash
 gacc "who am I"
-gacc "list my accounts"
+gacc "check account"
 gacc "switch to myusername"
 gacc "create a public repo called my-app"
-```
-
-Or classic commands:
-
-```bash
-gacc status
-gacc list
-gacc use myusername
-gacc create my-app --public
+gacc ship my-app --public
+gacc create my-app --public --explain
 ```
 
 Built on the official [GitHub CLI (`gh`)](https://cli.github.com/).
 
-## Install (global)
+## What makes gacc different
+
+| Feature | What it does |
+|--------|----------------|
+| **Plain English** | `gacc "create a public repo called hello"` |
+| **Account guard** | Warns before create/ship if active account ≠ remote / expected |
+| **`gacc check`** | Shows active account vs git identity vs remote owner |
+| **`gacc ship`** | One shot: init → commit → create → push |
+| **`--explain` / `--dry-run`** | Print commands without running them |
+
+## Install
 
 ```bash
-# From the repo
 git clone https://github.com/vinyaspoojary318-cloud/gacc.git
 cd gacc
 pip install -e .
-
-# Later, when published on PyPI:
-# pip install gacc
 ```
 
 Requires **Python 3.9+** and **[GitHub CLI](https://cli.github.com/)**:
 
 ```bash
-brew install gh          # macOS
-gh auth login            # log in with each account you use
-```
-
-> **Why not npm?** `gacc` is a Python tool. Global install is via **pip** (PyPI), which works on every OS the same way `npm install -g` does for Node tools.
-
-## Plain English
-
-| You say | gacc does |
-|--------|-----------|
-| `gacc "who am I"` | Show active account |
-| `gacc "list accounts"` | List all accounts |
-| `gacc "switch to octocat"` | Switch account |
-| `gacc "login"` | Add / authenticate account |
-| `gacc "create a public repo called hello"` | Create + push public repo |
-| `gacc "create private project named secret"` | Create private repo |
-
-Same thing with the `ask` subcommand:
-
-```bash
-gacc ask "create a public repo called hello"
+brew install gh   # macOS
+gh auth login     # for each account
 ```
 
 ## Commands
@@ -63,27 +43,45 @@ gacc ask "create a public repo called hello"
 | Command | Description |
 |---------|-------------|
 | `gacc status` | Active GitHub account |
+| `gacc check` | Account guard report for this folder |
 | `gacc list` | All authenticated accounts |
-| `gacc use <username>` | Switch account |
+| `gacc use <user>` | Switch account |
 | `gacc login` | Authenticate a new account |
-| `gacc create <name>` | Create repo + push (private by default) |
-| `gacc create <name> --public` | Public repo |
-| `gacc create <name> -d "desc" -a user` | Description + specific account |
+| `gacc create <name>` | Create repo + push (with guard) |
+| `gacc create <name> --public --explain` | Dry-run create |
+| `gacc ship [name]` | Init → commit → create → push |
+| `gacc ship my-app --public -a work` | Ship under a specific account |
 | `gacc version` | Version |
-| `gacc ask "..."` | Plain-English request |
+| `gacc ask "..."` | Plain English |
 
-## Why gacc?
-
-Without it: browser → create repo → hope it’s the right account → copy remote → terminal → push.
-
-With it:
+### Create options
 
 ```bash
-gacc use work
-gacc create my-project
-# or
-gacc "create a repo called my-project"
+gacc create my-app --public
+gacc create my-app -d "My app" -a myusername
+gacc create my-app --no-push
+gacc create my-app --force          # skip guard prompt
 ```
+
+### Ship options
+
+```bash
+gacc ship                    # uses folder name
+gacc ship my-app --public
+gacc ship my-app -m "First commit" -a work
+gacc ship my-app --explain
+```
+
+## Plain English examples
+
+| You say | gacc does |
+|--------|-----------|
+| `gacc "who am I"` | status |
+| `gacc "check account"` | check |
+| `gacc "list accounts"` | list |
+| `gacc "switch to octocat"` | use |
+| `gacc "create a public repo called hello"` | create |
+| `gacc "ship this as public repo demo"` | ship |
 
 ## License
 
