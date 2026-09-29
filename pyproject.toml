@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gacc"
-version = "0.3.2"
+version = "0.3.3"
 description = "CLI to manage multiple GitHub accounts and create + push repositories directly from the terminal"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -28,17 +28,16 @@ classifiers = [
     "Topic :: Utilities",
 ]
 dependencies = [
-    "typer>=0.12.0",
-    "rich>=13.0.0",
+    "typer>=0.12",
+    "rich>=13.0",
 ]
+
+[project.scripts]
+gacc = "gacc.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/vinyaspoojary318-cloud/gacc"
 Repository = "https://github.com/vinyaspoojary318-cloud/gacc"
-Issues = "https://github.com/vinyaspoojary318-cloud/gacc/issues"
-
-[project.scripts]
-gacc = "gacc.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

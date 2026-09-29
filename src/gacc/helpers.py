@@ -103,6 +103,7 @@ def show_summary(title: str = "What happened") -> None:
         )
     )
 
+    # Highlight account / URL if present in any step meta
     account = None
     url = None
     for step in _ACTIVITY:
@@ -137,9 +138,18 @@ def ensure_gh() -> None:
         console.print(
             Panel(
                 "[error]GitHub CLI ([cyan]gh[/]) is not installed.[/]\n\n"
-                "Install it:\n"
-                "  [cmd]brew install gh[/]          [muted]# macOS[/]\n"
-                "  [cmd]https://cli.github.com/[/]  [muted]# all platforms[/]",
+                "[bold]Windows[/]\n"
+                "  [cmd]winget install --id GitHub.cli[/]\n"
+                "  [cmd]scoop install gh[/]\n"
+                "  or download: [link=https://cli.github.com/]https://cli.github.com/[/link]\n\n"
+                "[bold]macOS[/]\n"
+                "  [cmd]brew install gh[/]\n\n"
+                "[bold]Linux[/]\n"
+                "  [cmd]sudo apt install gh[/]   [muted]# Debian/Ubuntu[/]\n"
+                "  or: [link=https://cli.github.com/]https://cli.github.com/[/link]\n\n"
+                "After install, reopen the terminal, then:\n"
+                "  [cmd]gh auth login[/]   [muted]# run once per GitHub account[/]\n"
+                "  [cmd]gacc login[/]      [muted]# same thing via gacc[/]",
                 title="[error]Missing dependency[/]",
                 border_style="red",
             )

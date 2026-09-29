@@ -5,7 +5,8 @@
 <h1 align="center">gacc</h1>
 
 <p align="center">
-  <strong>Talk to GitHub in plain English — and never ship under the wrong account.</strong>
+  <strong>Control multiple GitHub accounts in plain English.</strong><br/>
+  Login every account · switch with a sentence · never ship under the wrong one.
 </p>
 
 <p align="center">
@@ -13,59 +14,87 @@
 </p>
 
 ```bash
-gacc "who am I"
-gacc "check account"
-gacc "switch to myusername"
+gacc "login"                 # add a GitHub account (run once per account)
+gacc "list my accounts"      # see all logged-in accounts
+gacc "switch to myusername"  # change the active account
+gacc "who am I"              # current active account
+gacc "check account"         # right account for this folder?
 gacc "create a public repo called my-app"
 gacc ship my-app --public
-gacc create my-app --public --explain
 ```
 
 When you run `gacc` with no arguments, Ice Bear greets you in the terminal.
 
 Built on the official [GitHub CLI (`gh`)](https://cli.github.com/).
 
-## What makes gacc different
+## Main goal: multi-account control
 
-| Feature | What it does |
-|--------|----------------|
-| **Ice Bear startup** | Distinct terminal banner every time you open `gacc` |
-| **Plain English** | `gacc "create a public repo called hello"` |
-| **Account guard** | Warns before create/ship if active account ≠ remote / expected |
-| **`gacc check`** | Active account vs git identity vs remote owner |
-| **`gacc ship`** | Init → commit → create → push |
-| **Activity summary** | After every command, a clear “What happened” table |
-| **`--explain` / `--dry-run`** | Print commands without running them |
+| You want | Plain English |
+|----------|----------------|
+| Add work + personal | `gacc "login"` (repeat for each account) |
+| See every account | `gacc "list my accounts"` |
+| Switch active account | `gacc "switch to octocat"` |
+| Who is active now? | `gacc "who am I"` |
+| Safe before push | `gacc "check account"` |
 
 ## Install
 
 ```bash
 git clone https://github.com/vinyaspoojary318-cloud/gacc.git
 cd gacc
-pip install -e .
+pip install .
 ```
 
 Requires **Python 3.9+** and **[GitHub CLI](https://cli.github.com/)**:
 
 ```bash
-brew install gh   # macOS
-gh auth login     # for each account
+# Windows
+winget install --id GitHub.cli
+# or: scoop install gh
+# or download: https://cli.github.com/
+
+# macOS
+brew install gh
+
+# Linux (Debian/Ubuntu)
+sudo apt install gh
 ```
+
+Then log in each account you manage:
+
+```bash
+gacc login          # or: gh auth login
+gacc login          # again for your second account
+gacc "list my accounts"
+gacc "switch to <username>"
+```
+
+## What makes gacc different
+
+| Feature | What it does |
+|--------|----------------|
+| **Multi-account** | Login many accounts, list them, switch in plain English |
+| **Ice Bear startup** | Distinct terminal banner |
+| **Plain English** | `gacc "switch to myusername"` |
+| **Account guard** | Warns before create/ship if active account ≠ remote / expected |
+| **`gacc check`** | Active account vs git identity vs remote owner |
+| **`gacc ship`** | Init → commit → create → push |
+| **Activity summary** | After every command, a clear “What happened” table |
+| **`--explain` / `--dry-run`** | Print commands without running them |
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `gacc` | Ice Bear banner + help |
+| `gacc login` | Authenticate / add another account |
+| `gacc list` | All authenticated accounts |
+| `gacc use <user>` | Switch active account |
 | `gacc status` | Active GitHub account |
 | `gacc check` | Account guard report |
-| `gacc list` | All authenticated accounts |
-| `gacc use <user>` | Switch account |
-| `gacc login` | Authenticate a new account |
 | `gacc create <name>` | Create repo + push (with guard + summary) |
 | `gacc ship [name]` | One-shot ship |
 | `gacc version` | Version |
-| `gacc ask "..."` | Plain English |
 
 ## License
 
