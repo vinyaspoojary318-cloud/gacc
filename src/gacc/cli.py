@@ -1,6 +1,6 @@
 """gacc – GitHub Account CLI.
 
-Talk to GitHub in plain English — and never ship under the wrong account.
+Control multiple GitHub accounts in plain English.
 Built on the official GitHub CLI (gh).
 """
 
@@ -42,9 +42,10 @@ from gacc.nl import parse_natural
 app = typer.Typer(
     name="gacc",
     help=(
-        "Talk to GitHub in plain English — and never ship under the wrong account.\n\n"
-        "[dim]Examples:[/] [cyan]gacc \"create a public repo called my-app\"[/]  ·  "
-        "[cyan]gacc ship my-app --public[/]  ·  [cyan]gacc check[/]"
+        "Control multiple GitHub accounts in plain English — "
+        "login, list, switch, and never ship under the wrong account.\n\n"
+        "[dim]Examples:[/] [cyan]gacc \"list my accounts\"[/]  ·  "
+        "[cyan]gacc \"switch to myusername\"[/]  ·  [cyan]gacc login[/]"
     ),
     add_completion=False,
     no_args_is_help=False,
@@ -63,14 +64,15 @@ def _run_natural(text: str) -> None:
         console.print(
             Panel(
                 f"[warn]I didn't understand:[/] [cmd]{text}[/]\n\n"
-                "[muted]Try:[/]\n"
-                '  [cyan]gacc "who am I"[/]\n'
+                "[bold]Multi-account (main use)[/]\n"
+                '  [cyan]gacc "login"[/]                  [muted]# add another GitHub account[/]\n'
+                '  [cyan]gacc "list my accounts"[/]       [muted]# see every logged-in account[/]\n'
+                '  [cyan]gacc "switch to myusername"[/]   [muted]# change active account[/]\n'
+                '  [cyan]gacc "who am I"[/]               [muted]# current active account[/]\n\n'
+                "[bold]Also[/]\n"
                 '  [cyan]gacc "check account"[/]\n'
-                '  [cyan]gacc "list my accounts"[/]\n'
-                '  [cyan]gacc "switch to myusername"[/]\n'
                 '  [cyan]gacc "create a public repo called my-app"[/]\n'
-                '  [cyan]gacc "ship this as public repo my-app"[/]\n'
-                '  [cyan]gacc "login"[/]',
+                '  [cyan]gacc "ship this as public repo my-app"[/]',
                 title="[warn]Unknown request[/]",
                 border_style="yellow",
             )
@@ -118,7 +120,7 @@ def main(
     ctx: typer.Context,
     request: Optional[str] = typer.Argument(
         None,
-        help='Plain English request, e.g. "create a public repo called my-app"',
+        help='Plain English request, e.g. "switch to myusername"',
     ),
     explain: bool = typer.Option(
         False,
@@ -127,7 +129,7 @@ def main(
         help="Show what would run without making changes",
     ),
 ) -> None:
-    """gacc – talk to GitHub in plain English; never ship under the wrong account."""
+    """gacc – multi-account GitHub in plain English."""
     set_explain(explain)
     clear_activity()
 
@@ -139,11 +141,14 @@ def main(
     _show_banner()
     console.print(ctx.get_help())
     console.print()
-    muted("Examples:")
-    console.print('  [cyan]gacc "who am I"[/]')
-    console.print('  [cyan]gacc "check account"[/]')
-    console.print('  [cyan]gacc "list accounts"[/]')
-    console.print('  [cyan]gacc "switch to octocat"[/]')
+    muted("Multi-account (plain English):")
+    console.print('  [cyan]gacc "login"[/]                  [muted]# add / authenticate an account[/]')
+    console.print('  [cyan]gacc "list my accounts"[/]       [muted]# all logged-in accounts[/]')
+    console.print('  [cyan]gacc "switch to myusername"[/]   [muted]# make that account active[/]')
+    console.print('  [cyan]gacc "who am I"[/]               [muted]# current active account[/]')
+    console.print('  [cyan]gacc "check account"[/]          [muted]# right account for this folder?[/]')
+    console.print()
+    muted("Also:")
     console.print('  [cyan]gacc "create a public repo called hello"[/]')
     console.print("  [cyan]gacc ship my-app --public[/]")
     console.print("  [cyan]gacc create my-app --public --explain[/]")
@@ -281,17 +286,27 @@ def list_accounts() -> None:
 def use(
     username: str = typer.Argument(..., help="GitHub username to switch to"),
 ) -> None:
-    """Switch the active GitHub account."""
+    """Switch the active GitHub account (plain English: gacc \"switch to username\")."""
     clear_activity()
     ensure_gh()
     before = current_user()
     if before:
         log_step("Previous active account", detail=before, meta={"account": before})
+
+    known = {a.get("user", "").lower() for a in gh_auth_status()}
+    if known and username.lower() not in known and not is_explain():
+        fail(f"'{username}' is not among your logged-in accounts.")
+        muted("Logged in as: " + ", ".join(sorted(u for u in known if u)))
+        muted('Add it first:  gacc login   or   gacc "login"')
+        log_step("Switch account", detail=f"unknown user → {username}", ok=False)
+        show_summary("What happened")
+        raise typer.Exit(1)
+
     info(f"Switching to [accent]{username}[/]...")
     if not switch_user(username):
         log_step("Switch account", detail=f"failed → {username}", ok=False)
         fail(f"Failed to switch to '{username}'.")
-        muted("Make sure the account is authenticated: gh auth login")
+        muted("Make sure the account is authenticated: gacc login")
         show_summary("What happened")
         raise typer.Exit(1)
     log_step(
@@ -307,21 +322,58 @@ def use(
 
 
 @app.command()
-def login() -> None:
-    """Add / authenticate a new GitHub account (wraps `gh auth login`)."""
+def login(
+    web: bool = typer.Option(
+        True,
+        "--web/--no-web",
+        help="Open browser login (easiest — can use Google/Gmail if linked to GitHub)",
+    ),
+) -> None:
+    """Add another GitHub account (browser login — easiest path)."""
     clear_activity()
     ensure_gh()
     if is_explain():
-        would("gh auth login")
-        log_step("Authenticate new account", detail="gh auth login (dry-run)")
+        would("gh auth login --web --git-protocol https")
+        log_step("Authenticate new account", detail="browser login (dry-run)")
         show_summary("What would happen")
         return
-    info("Starting GitHub authentication...")
-    log_step("Started GitHub login flow", detail="gh auth login")
-    result = subprocess.run(["gh", "auth", "login"])
+
+    existing = gh_auth_status()
+    if existing:
+        names = ", ".join(a.get("user", "?") for a in existing)
+        info(f"Already logged in: [accent]{names}[/]")
+        info("Adding another account...")
+    else:
+        info("No accounts yet — starting first GitHub login...")
+
+    console.print(
+        Panel(
+            "[bold]Easiest login[/]\n"
+            "1. A browser window opens (GitHub)\n"
+            "2. Sign in with [accent]Google / Gmail[/] if that account is linked to GitHub\n"
+            "   — or use your GitHub username + password / 2FA\n"
+            "3. Approve access — done\n\n"
+            "[muted]Note:[/] GitHub does not allow apps to log in with Gmail alone.\n"
+            "Browser login is the closest thing: one click if Google is already linked.\n\n"
+            "[muted]Tip:[/] run [cmd]gacc login[/] once per account (work, personal, …)\n"
+            'Then switch: [cmd]gacc "switch to username"[/]',
+            title="[cyan]GitHub login[/]",
+            border_style="cyan",
+        )
+    )
+    console.print()
+
+    cmd = ["gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https"]
+    if web:
+        cmd.append("--web")
+
+    log_step("Started GitHub login flow", detail=" ".join(cmd))
+    muted(f"$ {' '.join(cmd)}")
+    result = subprocess.run(cmd)
     if result.returncode != 0:
         log_step("Authentication", detail="failed or cancelled", ok=False)
         fail("Authentication failed or was cancelled.")
+        muted("Retry: [cmd]gacc login[/]   or without browser: [cmd]gacc login --no-web[/]")
         show_summary("What happened")
         raise typer.Exit(result.returncode)
     user = current_user()
@@ -333,6 +385,11 @@ def login() -> None:
     ok("Authentication complete.")
     if user:
         ok(f"Active account is now [accent]{user}[/]")
+    accounts = gh_auth_status()
+    if accounts:
+        names = ", ".join(a.get("user", "?") for a in accounts)
+        info(f"Accounts available: [accent]{names}[/]")
+        muted('Switch with: gacc "switch to <username>"   or   gacc use <username>')
     show_summary("What happened")
 
 
@@ -578,18 +635,17 @@ def ship(
     log_step("Running gh repo create --push", detail=" ".join(cmd))
     result = subprocess.run(cmd)
     if result.returncode != 0:
-        log_step("Ship", detail="gh repo create failed", ok=False)
-        fail("Ship failed (gh repo create).")
+        log_step("Ship", detail="failed", ok=False)
+        fail("Ship failed.")
         show_summary("What happened")
         raise typer.Exit(result.returncode)
 
     url = f"https://github.com/{current}/{repo_name}" if current else None
     log_step(
-        "Repository created on GitHub",
+        "Shipped",
         detail=f"{repo_name} ({vis})",
         meta={"account": current, "url": url},
     )
-    log_step("Pushed to origin", detail="remote: origin")
     ok(f"Shipped [accent]{repo_name}[/] ([cmd]{vis}[/])")
     if url:
         console.print(f"  [info]→[/] [link={url}]{url}[/link]")
@@ -599,25 +655,13 @@ def ship(
 @app.command()
 def version() -> None:
     """Show gacc version."""
-    from gacc import __version__
+    from importlib.metadata import version as pkg_version
 
-    console.print(
-        Panel(
-            f"[accent]gacc[/] [cmd]{__version__}[/]",
-            border_style="cyan",
-            padding=(0, 2),
-        )
-    )
-
-
-@app.command("ask")
-def ask(
-    request: str = typer.Argument(
-        ..., help='Plain English, e.g. "create a public repo called my-app"'
-    ),
-) -> None:
-    """Do something in plain English (same as: gacc \"your request\")."""
-    _run_natural(request)
+    try:
+        v = pkg_version("gacc")
+    except Exception:
+        v = "0.3.3"
+    console.print(f"[accent]gacc[/] {v}")
 
 
 if __name__ == "__main__":
