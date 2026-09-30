@@ -19,6 +19,7 @@ gacc "list my accounts"      # see all logged-in accounts
 gacc "switch to myusername"  # change the active account
 gacc "who am I"              # current active account
 gacc "check account"         # right account for this folder?
+gacc prompt                  # show active account in your shell prompt
 gacc "create a public repo called my-app"
 gacc ship my-app --public
 ```
@@ -36,6 +37,7 @@ Built on the official [GitHub CLI (`gh`)](https://cli.github.com/).
 | Switch active account | `gacc "switch to octocat"` |
 | Who is active now? | `gacc "who am I"` |
 | Safe before push | `gacc "check account"` |
+| Account in prompt | `gacc prompt` |
 
 ## Install
 
@@ -63,17 +65,36 @@ sudo apt install gh
 Then log in each account you manage:
 
 ```bash
-gacc login          # or: gh auth login
+gacc login
 gacc login          # again for your second account
 gacc "list my accounts"
 gacc "switch to <username>"
 ```
+
+## Shell prompt (active account)
+
+Show which GitHub account is active in every prompt:
+
+```bash
+# bash
+gacc prompt --shell bash --print >> ~/.bashrc && source ~/.bashrc
+
+# zsh
+gacc prompt --shell zsh --print >> ~/.zshrc && source ~/.zshrc
+
+# Windows PowerShell
+gacc prompt --shell powershell
+# paste the snippet into your $PROFILE
+```
+
+Uses `gacc status --short` under the hood. Prompt looks like: `(your-username) $`
 
 ## What makes gacc different
 
 | Feature | What it does |
 |--------|----------------|
 | **Multi-account** | Login many accounts, list them, switch in plain English |
+| **Shell prompt** | Active account visible in PS1 |
 | **Ice Bear startup** | Distinct terminal banner |
 | **Plain English** | `gacc "switch to myusername"` |
 | **Account guard** | Warns before create/ship if active account ≠ remote / expected |
@@ -91,8 +112,10 @@ gacc "switch to <username>"
 | `gacc list` | All authenticated accounts |
 | `gacc use <user>` | Switch active account |
 | `gacc status` | Active GitHub account |
+| `gacc status --short` | Username only (for prompts) |
 | `gacc check` | Account guard report |
-| `gacc create <name>` | Create repo + push (with guard + summary) |
+| `gacc prompt` / `gacc init` | Shell snippet for PS1 |
+| `gacc create <name>` | Create repo + push |
 | `gacc ship [name]` | One-shot ship |
 | `gacc version` | Version |
 
