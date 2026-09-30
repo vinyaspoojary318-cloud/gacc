@@ -9,7 +9,6 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
     t = re.sub(r"[\"'`]", "", t)
     t = re.sub(r"\s+", " ", t)
 
-    # --- status / who am I ---
     if re.search(
         r"\b(status|who am i|current account|which account|active account|"
         r"what account|am i logged in)\b",
@@ -17,7 +16,6 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
     ):
         return "status", {}
 
-    # --- check account alignment ---
     if re.search(
         r"\b(check|right account|wrong account|am i on|correct account|"
         r"account match|guard)\b",
@@ -25,7 +23,13 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
     ):
         return "check", {}
 
-    # --- list all accounts ---
+    if re.search(
+        r"\b(prompt|shell prompt|init shell|show account in prompt|"
+        r"ps1|terminal prompt)\b",
+        t,
+    ):
+        return "prompt", {}
+
     if re.search(
         r"\b(list|show|see|display|all)\b.*\b(accounts?|users?|logins?)\b"
         r"|\b(accounts?|users?)\b.*\b(list|show|all)\b"
@@ -33,10 +37,9 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
         r"|\bwhich accounts\b"
         r"|\baccounts i have\b",
         t,
-    ):
+    ) and not re.search(r"\bprompt\b", t):
         return "list", {}
 
-    # --- login / add another account ---
     if re.search(
         r"\b(login|log in|sign in|authenticate|add account|new account|"
         r"add another|login another|login all|connect account|"
@@ -45,7 +48,6 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
     ):
         return "login", {}
 
-    # --- switch / use account (plain English) ---
     m = re.search(
         r"(?:switch|use|change|set|go)\s+(?:to\s+)?(?:the\s+)?"
         r"(?:account\s+)?([a-zA-Z0-9][a-zA-Z0-9-]{0,38})",
@@ -69,7 +71,6 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
     if m and not re.search(r"\b(repo|project|repository)\b", t):
         return "use", {"username": m.group(1)}
 
-    # --- ship ---
     if re.search(r"\b(ship|publish|deploy this|push this)\b", t):
         public = bool(re.search(r"\bpublic\b", t))
         name = None
@@ -85,7 +86,6 @@ def parse_natural(text: str) -> tuple[str, dict] | None:
             account = m.group(1)
         return "ship", {"name": name, "public": public, "account": account}
 
-    # --- create repo ---
     if re.search(r"\b(create|make|new|init)\b", t) and re.search(
         r"\b(repo|repository|project)\b", t
     ):
